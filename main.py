@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -105,15 +106,40 @@ def run_deptry(path: Path) -> Tuple[List[str], List[str]]:
     console.print(
         f"{EMOJI['scan']} [bold cyan]Running deptry analysis...[/bold cyan]"
     )
-    result = run_command(["deptry", str(path), "--json"], cwd=path)
-    if result.returncode not in (0, 1):
-        console.print(f"{EMOJI['failure']} [bold red]deptry failed to execute.[/bold red]")
-        if result.stderr:
-            console.print(Panel.fit(result.stderr, title="deptry stderr", border_style="red"))
-        sys.exit(result.returncode or 2)
+    tmp_path: Path | None = None
+    try:
+        fd, filename = tempfile.mkstemp(prefix="deptry_", suffix=".json")
+        os.close(fd)
+        tmp_path = Path(filename)
+        command = ["deptry", str(path), "--json-output", str(tmp_path)]
+        result = run_command(command, cwd=path)
 
-    missing, unused = parse_deptry_report(result.stdout)
-    return missing, unused
+        if result.returncode in (0, 1):
+            json_output = tmp_path.read_text(encoding="utf-8") if tmp_path.exists() else ""
+            missing, unused = parse_deptry_report(json_output)
+            return missing, unused
+
+        stderr_text = result.stderr or ""
+        if "--json-output" in stderr_text and "No such option" in stderr_text:
+            fallback = run_command(["deptry", str(path), "--json"], cwd=path)
+            if fallback.returncode not in (0, 1):
+                console.print(f"{EMOJI['failure']} [bold red]deptry failed to execute.[/bold red]")
+                if fallback.stderr:
+                    console.print(Panel.fit(fallback.stderr, title="deptry stderr", border_style="red"))
+                sys.exit(fallback.returncode or 2)
+            missing, unused = parse_deptry_report(fallback.stdout)
+            return missing, unused
+
+        console.print(f"{EMOJI['failure']} [bold red]deptry failed to execute.[/bold red]")
+        if stderr_text:
+            console.print(Panel.fit(stderr_text, title="deptry stderr", border_style="red"))
+        sys.exit(result.returncode or 2)
+    finally:
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
 
 
 def select_requirements_file(path: Path) -> Path | None:

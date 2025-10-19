@@ -51,17 +51,54 @@ def test_run_deptry_collects_findings(monkeypatch, tmp_path):
     }
 
     def fake_run_command(command, cwd=None):
-        return subprocess.CompletedProcess(
-            args=command,
-            returncode=0,
-            stdout=json.dumps(payload),
-            stderr="",
-        )
+        if "--json-output" in command:
+            target = Path(command[command.index("--json-output") + 1])
+            target.write_text(json.dumps(payload), encoding="utf-8")
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout="",
+                stderr="",
+            )
+        raise AssertionError("Unexpected command")
 
     monkeypatch.setattr(main, "run_command", fake_run_command)
     missing, unused = main.run_deptry(tmp_path)
     assert missing == ["requests"]
     assert unused == ["boto3"]
+
+
+def test_run_deptry_fallbacks_to_legacy_flag(monkeypatch, tmp_path):
+    payload = {
+        "missing": [{"module": "httpx"}],
+        "unused": [],
+    }
+    calls: list[list[str]] = []
+
+    def fake_run_command(command, cwd=None):
+        calls.append(command)
+        if "--json-output" in command:
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=2,
+                stdout="",
+                stderr="Error: No such option: --json-output",
+            )
+        if "--json" in command:
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout=json.dumps(payload),
+                stderr="",
+            )
+        raise AssertionError("Unexpected command")
+
+    monkeypatch.setattr(main, "run_command", fake_run_command)
+    missing, unused = main.run_deptry(tmp_path)
+    assert missing == ["httpx"]
+    assert unused == []
+    assert any("--json-output" in call for call in calls)
+    assert any("--json" in call for call in calls)
 
 
 def test_run_pip_check_reqs_collects_missing_and_unused(monkeypatch, tmp_path):
