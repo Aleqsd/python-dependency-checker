@@ -1,0 +1,4 @@
+pytest
+rich
+deptry
+pip-check-reqs

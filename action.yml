@@ -1,0 +1,39 @@
+name: "Python Dependency Checker"
+description: "Verify missing or unused dependencies in Python projects."
+author: "ZqsDev"
+inputs:
+  path:
+    description: "Project path to analyse."
+    required: false
+    default: "."
+  mode:
+    description: "Analysis engine to use. Accepted values: deptry, pip-check-reqs."
+    required: false
+    default: "deptry"
+  fail-on-warn:
+    description: "Fail workflow when unused dependencies are found."
+    required: false
+    default: "false"
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    - name: Install dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install deptry pip-check-reqs rich
+    - name: Run dependency checker
+      shell: bash
+      env:
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_FAIL_ON_WARN: ${{ inputs.fail-on-warn }}
+      run: |
+        python "${{ github.action_path }}/main.py"
+branding:
+  icon: "package"
+  color: "blue"

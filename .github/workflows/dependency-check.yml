@@ -1,0 +1,18 @@
+name: Dependency Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 🐍 Run Python Dependency Checker
+        uses: aleqsd/python-dependency-checker@v1
+        with:
+          path: .
+          mode: deptry
+          fail-on-warn: true
