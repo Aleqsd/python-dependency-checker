@@ -233,6 +233,76 @@ def render_table(missing: List[str], unused: List[str]) -> None:
     console.print(table)
 
 
+def auto_fix_dependencies(
+    project_path: Path, missing: List[str], unused: List[str]
+) -> None:
+    """Apply automated fixes to dependency files."""
+    if not missing and not unused:
+        return
+
+    console.print(f"{EMOJI['info']} [bold]Applying auto-fix...[/bold]")
+
+    pyproject_path = project_path / "pyproject.toml"
+    if pyproject_path.exists():
+        console.print(
+            f"[yellow]Auto-fixing for pyproject.toml is not yet supported.[/yellow]"
+        )
+        return
+
+    reqs_file_path = select_requirements_file(project_path)
+    if not reqs_file_path or not reqs_file_path.exists():
+        console.print(
+            f"{EMOJI['failure']} [bold red]Could not find a requirements file to auto-fix.[/bold red]"
+        )
+        return
+
+    fix_requirements(reqs_file_path, missing, unused)
+
+
+def fix_requirements(path: Path, missing: List[str], unused: List[str]) -> None:
+    """Add or remove dependencies from a requirements file."""
+    import re
+
+    content = path.read_text(encoding="utf-8")
+    lines = content.splitlines()
+    new_lines = []
+    removed_deps: set[str] = set()
+
+    if unused:
+        for line in lines:
+            line_stripped = line.strip()
+            if not line_stripped or line_stripped.startswith("#"):
+                new_lines.append(line)
+                continue
+
+            match = re.match(r"^\s*([a-zA-Z0-9_.-]+)", line)
+            if match:
+                package_name = match.group(1)
+                if package_name in unused:
+                    removed_deps.add(package_name)
+                    continue
+            new_lines.append(line)
+    else:
+        new_lines = lines
+
+    if removed_deps:
+        console.print(
+            f"  - Removed unused dependencies: {', '.join(sorted(removed_deps))}"
+        )
+
+    added_deps: List[str] = []
+    if missing:
+        for dep in missing:
+            new_lines.append(dep)
+            added_deps.append(dep)
+
+    if added_deps:
+        console.print(f"  - Added missing dependencies: {', '.join(sorted(added_deps))}")
+
+    path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    console.print(f"{EMOJI['ok']} [green]Fixed dependencies in {path}.[/green]")
+
+
 def write_summary(missing: List[str], unused: List[str], mode: str) -> None:
     """Append a markdown summary to GITHUB_STEP_SUMMARY when available."""
     summary_path = os.getenv("GITHUB_STEP_SUMMARY")
@@ -244,9 +314,13 @@ def write_summary(missing: List[str], unused: List[str], mode: str) -> None:
         "",
     ]
     if missing:
-        lines.append(f"- {EMOJI['missing']} **Missing dependencies**: {', '.join(sorted(missing))}")
+        lines.append(
+            f"- {EMOJI['missing']} **Missing dependencies**: {', '.join(sorted(missing))}"
+        )
     if unused:
-        lines.append(f"- {EMOJI['unused']} **Unused dependencies**: {', '.join(sorted(unused))}")
+        lines.append(
+            f"- {EMOJI['unused']} **Unused dependencies**: {', '.join(sorted(unused))}"
+        )
     if not missing and not unused:
         lines.append(f"- {EMOJI['ok']} All dependencies look good!")
 
@@ -263,12 +337,14 @@ def main() -> None:
         or "false"
     )
     fail_on_warn = fail_on_warn_raw.strip().lower() == "true"
+    auto_fix_raw = os.getenv("INPUT_AUTO_FIX", "false")
+    auto_fix = auto_fix_raw.strip().lower() == "true"
 
     console.print(
         f"{EMOJI['start']} [bold blue]Python Dependency Checker[/bold blue] started."
     )
     console.print(
-        f"{EMOJI['info']} Checking [bold]{raw_path}[/bold] using [bold]{mode}[/bold] (fail-on-warn={fail_on_warn})."
+        f"{EMOJI['info']} Checking [bold]{raw_path}[/bold] using [bold]{mode}[/bold] (fail-on-warn={fail_on_warn}, auto-fix={auto_fix})."
     )
 
     project_path = resolve_project_path(raw_path)
@@ -290,9 +366,22 @@ def main() -> None:
     render_table(missing, unused)
     write_summary(missing, unused, mode)
 
+    if auto_fix:
+        auto_fix_dependencies(project_path, missing, unused)
+        console.print(
+            f"{EMOJI['scan']} [bold cyan]Re-running analysis after auto-fix...[/bold cyan]"
+        )
+        if mode == "deptry":
+            missing, unused = run_deptry(project_path)
+        elif mode == "pip-check-reqs":
+            missing, unused, diagnostics = run_pip_check_reqs(project_path)
+        render_table(missing, unused)
+
     if diagnostics:
         for title, stderr in diagnostics.items():
-            console.print(Panel.fit(stderr, title=f"{title} stderr", border_style="yellow"))
+            console.print(
+                Panel.fit(stderr, title=f"{title} stderr", border_style="yellow")
+            )
 
     has_missing = bool(missing)
     has_unused = bool(unused)

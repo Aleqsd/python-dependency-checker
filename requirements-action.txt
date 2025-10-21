@@ -1,0 +1,3 @@
+deptry
+pip-check-reqs
+rich

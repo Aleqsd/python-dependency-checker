@@ -57,6 +57,7 @@ jobs:
 | `path`         | `.`      | Root directory of the project to analyse.                     |
 | `mode`         | `deptry` | Analysis engine. Accepted values: `deptry`, `pip-check-reqs`. |
 | `fail-on-warn` | `false`  | When `true`, unused dependencies trigger a failed run.        |
+| `auto-fix`     | `false`  | When `true`, automatically adds missing and removes unused dependencies (only for `requirements.txt` files). |
 
 ---
 

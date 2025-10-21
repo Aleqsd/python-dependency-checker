@@ -14,6 +14,10 @@ inputs:
     description: "Fail workflow when unused dependencies are found."
     required: false
     default: "false"
+  auto-fix:
+    description: "Automatically fix missing and unused dependencies."
+    required: false
+    default: "false"
 runs:
   using: "composite"
   steps:
@@ -21,17 +25,26 @@ runs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      id: cache-pip
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles(format('{0}/requirements-action.txt', github.action_path)) }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
     - name: Install dependencies
       shell: bash
       run: |
         python -m pip install --upgrade pip
-        pip install deptry pip-check-reqs rich
+        pip install -r "${{ github.action_path }}/requirements-action.txt"
     - name: Run dependency checker
       shell: bash
       env:
         INPUT_PATH: ${{ inputs.path }}
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_FAIL_ON_WARN: ${{ inputs.fail-on-warn }}
+        INPUT_AUTO_FIX: ${{ inputs.auto-fix }}
       run: |
         python "${{ github.action_path }}/main.py"
 branding:
